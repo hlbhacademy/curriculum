@@ -11,7 +11,7 @@
     <h1 class="text-3xl font-bold mb-2">課表查詢系統</h1>
     <p class="text-sm text-gray-500 mb-4">登入帳號：{{ email }}</p>
 
-    <!-- 查詢區塊 -->
+    <!-- 查詢模式選擇 -->
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <label class="font-semibold">查詢模式：</label>
       <label><input type="radio" name="mode" value="class" checked> 班級</label>
@@ -25,7 +25,7 @@
       </select>
     </div>
 
-    <!-- 課表標題含日期列 -->
+    <!-- 課表區塊 -->
     <div class="overflow-x-auto">
       <table class="w-full border text-center text-sm">
         <thead class="bg-gray-200">
@@ -33,9 +33,9 @@
             <th class="w-20">節次</th>
             {% for day in range(1, 6) %}
               <th class="px-2 py-1">
-                星期{{ '一二三四五'[day-1] }}<br />
+                星期{{ '一二三四五'[day - 1] }}<br />
                 <span class="text-xs text-gray-500">
-                  {{ weekday_dates.get(day, '') }}
+                  {{ weekday_dates[day] if weekday_dates[day] is defined else '' }}
                 </span>
               </th>
             {% endfor %}
@@ -54,12 +54,13 @@
       </table>
     </div>
 
+    <!-- 更新說明 -->
     <p class="text-xs text-gray-500 mt-4">
       課表資料最後更新於 {{ yesterday }} 16:00，今日最新課表仍以教學組發布為準
     </p>
   </div>
 
-  <!-- JS 載入與互動邏輯 -->
+  <!-- JavaScript 控制區 -->
   <script>
     async function loadSchedule() {
       const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -67,14 +68,14 @@
       const res = await fetch(`/schedule/${mode}/${target}`);
       const data = await res.json();
 
-      // 清空
+      // 清空格子
       for (let d = 1; d <= 5; d++) {
         for (let p = 1; p <= 8; p++) {
           document.getElementById(`cell-${d}-${p}`).innerHTML = "";
         }
       }
 
-      // 填入課表
+      // 填入資料
       for (const key in data) {
         const [d, p] = key.split("-");
         const content = `${data[key].subject}<br><span class='text-xs text-gray-500'>${data[key].teacher}</span>`;
@@ -82,17 +83,17 @@
       }
     }
 
-    document.getElementById("target").addEventListener("change", loadSchedule);
+    // 當模式切換時更新選單與資料
     document.querySelectorAll('input[name="mode"]').forEach(radio => {
-      radio.addEventListener("change", async () => {
+      radio.addEventListener("change", () => {
         const mode = document.querySelector('input[name="mode"]:checked').value;
         const select = document.getElementById("target");
         select.innerHTML = "";
 
         const options = {
-          "class": {{ class_names|tojson }},
-          "teacher": {{ teacher_names|tojson }},
-          "room": {{ room_names|tojson }}
+          class: {{ class_names | tojson }},
+          teacher: {{ teacher_names | tojson }},
+          room: {{ room_names | tojson }}
         }[mode];
 
         options.forEach(name => {
@@ -102,11 +103,11 @@
           select.appendChild(option);
         });
 
-        await loadSchedule();
+        loadSchedule();
       });
     });
 
-    // 初始載入
+    document.getElementById("target").addEventListener("change", loadSchedule);
     window.onload = loadSchedule;
   </script>
 </body>
