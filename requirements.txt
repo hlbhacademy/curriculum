@@ -1,4 +1,5 @@
 Flask
+APScheduler
 gunicorn
 pandas
 gspread
