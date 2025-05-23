@@ -7,6 +7,11 @@ from authlib.integrations.flask_client import OAuth
 import os, secrets
 
 app = Flask(__name__)
+from flask_caching import Cache
+
+app.config['CACHE_TYPE'] = 'SimpleCache'
+app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 預設快取 5 分鐘
+cache = Cache(app)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "supersecret")
 
 # Google OAuth 設定
@@ -67,6 +72,7 @@ client = gspread.authorize(credentials)
 spreadsheet_id = "17sI2YSDCec_Olm3CiqW57wSS63fJiGXN7x-9-jbcCJo"
 worksheet_name = "工作表1"
 
+@cache.cached(timeout=60)  # 每 60 秒更新一次
 def load_schedule():
     sheet = client.open_by_key(spreadsheet_id).worksheet(worksheet_name)
     data = sheet.get_all_records()
