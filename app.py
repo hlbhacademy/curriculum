@@ -52,7 +52,17 @@ def logout():
 
 # ===== Google Sheets 讀取 =====
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-credentials = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+import json
+from io import StringIO
+
+# 這段請加在最上面 import 區（你應該已經有 `import os` 了）
+# 加上 json, StringIO 是必要的
+
+# 以下是替代原本的 credentials 調用方式
+credentials_json = os.environ["GOOGLE_CREDENTIALS_JSON"]
+credentials_dict = json.loads(credentials_json)
+credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+
 client = gspread.authorize(credentials)
 spreadsheet_id = "17sI2YSDCec_Olm3CiqW57wSS63fJiGXN7x-9-jbcCJo"
 worksheet_name = "工作表1"
