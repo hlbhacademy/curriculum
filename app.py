@@ -10,7 +10,7 @@ import os, secrets, json, re
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "supersecret")
 
-# ===== Google OAuth 認證設定 =====
+# ✅ Google OAuth 認證
 oauth = OAuth(app)
 google = oauth.register(
     name='google',
@@ -47,7 +47,7 @@ def logout():
     session.pop("user", None)
     return redirect("/")
 
-# ===== 讀取 Google Sheets 資料（具快取機制） =====
+# ✅ 讀取 Sheets 並快取
 @lru_cache(maxsize=1)
 def load_schedule():
     credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
@@ -61,10 +61,17 @@ def load_schedule():
 
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    df = df[df["班級名稱"].notna() & df["教師名稱"].notna() & df["星期"].notna() & df["節次"].notna()]
+
+    # ✅ 過濾必要欄位
+    df = df[
+        df["原始班級名稱"].notna() &
+        df["原始教師名稱"].notna() &
+        df["原始星期"].notna() &
+        df["原始節次"].notna()
+    ]
     return df
 
-# ===== 自訂班級排序邏輯 =====
+# ✅ 班級排序：英 > 會 > 商 > 資 > 多，並依高三至高一
 def sort_class_names(names):
     type_order = {"英": 1, "會": 2, "商": 3, "資": 4, "多": 5}
     def sort_key(name):
@@ -74,7 +81,7 @@ def sort_class_names(names):
         return (type_order.get(prefix, 99), -year, name)
     return sorted(names, key=sort_key)
 
-# ===== 主頁：傳入班級、教師、教室選項與更新時間 =====
+# ✅ 主畫面
 @app.route("/")
 def index():
     user = session.get("user")
@@ -82,14 +89,15 @@ def index():
         return redirect("/login")
 
     df = load_schedule()
-    class_names = sort_class_names(df["班級名稱"].dropna().unique())
-    teacher_names = sorted(df["教師名稱"].dropna().unique())
-    room_names = sorted(df["教室名稱"].dropna().unique())
+    class_names = sort_class_names(df["原始班級名稱"].dropna().unique())
+    teacher_names = sorted(df["原始教師名稱"].dropna().unique())
+    room_names = sorted(df["原始教室名稱"].dropna().unique())
 
     update_time = datetime.now().strftime("%m月%d日").lstrip("0").replace(" 0", " ")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%m月%d日").lstrip("0").replace(" 0", " ")
 
-    weekday_dates = df.groupby("星期")["日期"].first().to_dict()
+    # 日期對應星期（取第一筆出現日期）
+    weekday_dates = df.groupby("原始星期")["日期"].first().to_dict()
 
     return render_template("index.html",
         class_names=class_names,
@@ -101,14 +109,14 @@ def index():
         weekday_dates=weekday_dates
     )
 
-# ===== 課表 API：回傳某班級／教師／教室的課表資料 =====
+# ✅ 查詢課表 API
 @app.route("/schedule/<mode>/<target>")
 def schedule(mode, target):
     df = load_schedule()
     col_map = {
-        "class": "班級名稱",
-        "teacher": "教師名稱",
-        "room": "教室名稱"
+        "class": "原始班級名稱",
+        "teacher": "原始教師名稱",
+        "room": "原始教室名稱"
     }
     if mode not in col_map:
         return jsonify({"error": "無效的查詢模式"}), 400
@@ -117,11 +125,14 @@ def schedule(mode, target):
     sub_df = df[df[col] == target]
     data = {}
     for _, row in sub_df.iterrows():
-        key = f"{int(row['星期'])}-{int(row['節次'])}"
+        key = f"{int(row['原始星期'])}-{int(row['原始節次'])}"
         data[key] = {
-            "subject": row["科目名稱"],
-            "teacher": row["教師名稱"],
-            "room": row["教室名稱"],
-            "class": row["班級名稱"]
+            "subject": row["原始科目名稱"],
+            "teacher": row["原始教師名稱"],
+            "room": row["原始教室名稱"],
+            "class": row["原始班級名稱"]
         }
     return jsonify(data)
+
+if __name__ == '__main__':
+    app.run(debug=True)
