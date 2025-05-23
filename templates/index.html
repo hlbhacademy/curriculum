@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>課表查詢系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+  <div class="max-w-5xl w-full px-4 sm:px-6 mx-auto mt-8 p-4 bg-white rounded shadow">
+    <h1 class="text-2xl font-semibold text-center mb-6">課表查詢系統</h1>
+
+    <div class="flex flex-wrap gap-3 justify-center items-center mb-6">
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="setMode('class')" class="mode-btn bg-blue-500 text-white px-3 py-1 rounded">班級</button>
+        <button onclick="setMode('teacher')" class="mode-btn bg-gray-200 px-3 py-1 rounded">教師</button>
+        <button onclick="setMode('room')" class="mode-btn bg-gray-200 px-3 py-1 rounded">教室</button>
+      </div>
+      <select id="targetSelect" class="border rounded px-3 py-1 w-48"></select>
+    </div>
+
+    <div id="timetable" class="overflow-x-auto"></div>
+
+    <div class="text-center text-sm text-gray-500 mt-6 mb-4">
+      課表資料最後更新於 <span id="updateTime"></span> 16:00，今日最新課表仍以教學組發布為準
+    </div>
+  </div>
+
+  <div id="popup" class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center z-50">
+    <div class="bg-white rounded shadow-lg p-6 w-11/12 sm:w-[480px] max-h-[80vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-lg font-semibold">可互調課教師</h2>
+        <button onclick="closePopup()" class="text-gray-500 hover:text-gray-800 text-sm">✕</button>
+      </div>
+      <ul id="subList" class="list-disc list-inside text-gray-800"></ul>
+    </div>
+  </div>
+
+  <script>
+    const now = new Date();
+    now.setDate(now.getDate() - 1);
+    document.getElementById("updateTime").textContent = `${now.getMonth() + 1}月${now.getDate()}日`;
+
+    const class_schedule = {{ class_schedule | safe }};
+    const teacher_schedule = {{ teacher_schedule | safe }};
+    const room_schedule = {{ room_schedule | safe }};
+    const teacher_free = {{ teacher_free | safe }};
+
+    const modeMap = {
+      class: class_schedule,
+      teacher: teacher_schedule,
+      room: room_schedule
+    };
+
+    let currentMode = 'class';
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-500', 'text-white');
+        btn.classList.add('bg-gray-200');
+      });
+      event.target.classList.remove('bg-gray-200');
+      event.target.classList.add('bg-blue-500', 'text-white');
+      updateOptions();
+    }
+
+    function updateOptions() {
+      const select = document.getElementById('targetSelect');
+      select.innerHTML = '';
+      const keys = Object.keys(modeMap[currentMode]).sort();
+      for (const k of keys) {
+        const option = document.createElement('option');
+        option.value = k;
+        option.textContent = k;
+        select.appendChild(option);
+      }
+      renderTable();
+      select.onchange = renderTable;
+    }
+
+    function renderTable() {
+      const data = modeMap[currentMode];
+      const key = document.getElementById('targetSelect').value;
+      const table = document.createElement('table');
+      table.className = "min-w-[640px] table-auto w-full border border-gray-300 text-sm";
+
+      const thead = document.createElement('thead');
+      const days = ['節次', '星期一', '星期二', '星期三', '星期四', '星期五'];
+      thead.innerHTML = '<tr>' + days.map(d => `<th class="border px-2 py-1 bg-gray-100">${d}</th>`).join('') + '</tr>';
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (let period = 1; period <= 8; period++) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="border px-2 py-1 bg-gray-100">第${period}節</td>`;
+        for (let day = 1; day <= 5; day++) {
+          const content = data[key]?.[day]?.[period] || '';
+          const td = document.createElement('td');
+          td.className = "border px-2 py-1 text-center align-top";
+          td.innerHTML = content;
+          if (content && currentMode === 'class') {
+            td.classList.add("cursor-pointer", "hover:bg-blue-50");
+            td.onclick = () => showSwappableTeachers(key, day, period, content);
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+
+      const wrapper = document.getElementById('timetable');
+      wrapper.innerHTML = '';
+      wrapper.appendChild(table);
+    }
+
+    function showSwappableTeachers(className, dayA, periodA, contentA) {
+      const teacherA = extractTeacher(contentA);
+      const list = document.getElementById('subList');
+      list.innerHTML = '';
+      let found = 0;
+
+      // 檢查A節是否為團體活動，如果是則不能調課
+      const subjectA = stripHTML(class_schedule[className]?.[dayA]?.[periodA] || '');
+      if (subjectA.includes("團體活動")) {
+        list.innerHTML = '<li class="text-red-600 font-medium">此節為團體活動時間，無法調課</li>';
+        document.getElementById('popup').classList.remove('hidden');
+        document.getElementById('popup').classList.add('flex');
+        return;
+      }
+
+      for (const teacherB in teacher_schedule) {
+        if (teacherB === teacherA) continue;
+        const bSchedule = teacher_schedule[teacherB];
+
+        for (let dayB = 1; dayB <= 5; dayB++) {
+          for (let periodB = 1; periodB <= 8; periodB++) {
+            const teachThisClass = bSchedule?.[dayB]?.[periodB] === className;
+            if (!teachThisClass) continue;
+
+            // 檢查B節是否為團體活動
+            const subjectB = stripHTML(class_schedule[className]?.[dayB]?.[periodB] || '');
+            if (subjectB.includes("團體活動")) continue;
+
+            const aFree = isFree(teacherA, dayB, periodB);
+            const bFree = isFree(teacherB, dayA, periodA);
+            
+            // 檢查跨午休限制（第8節不能與1-7節調換）
+            const crossPeriod = (periodA === 8 && periodB <= 7) || (periodB === 8 && periodA <= 7);
+            
+            if (!aFree || !bFree || crossPeriod) continue;
+
+            // 收集所有警告
+            const warnings = [];
+            
+            // 修正後的體育課連續天數檢查
+            if (causesPEConsecutiveDays(className, dayA, periodA, dayB, periodB)) {
+              warnings.push("體育課連續兩天");
+            }
+            
+            if (causesOverloadInDay(teacherB, className, dayB)) {
+              warnings.push("同日授課過多");
+            }
+            
+            if (causesNoLunchBreak(teacherB, className, dayB)) {
+              warnings.push("午休時間不足");
+            }
+
+            const wdA = "一二三四五"[dayA - 1];
+            const wdB = "一二三四五"[dayB - 1];
+            const li = document.createElement('li');
+            
+            // 確保紅色警告正確顯示
+            let warningText = '';
+            if (warnings.length > 0) {
+              warningText = `<span class="text-red-500 font-semibold ml-2">【不建議：${warnings.join("、")}】</span>`;
+            }
+            
+            li.innerHTML = `${teacherB}（週${wdB} 第${periodB}節 ↔ 週${wdA} 第${periodA}節）${warningText}`;
+            list.appendChild(li);
+            found++;
+          }
+        }
+      }
+
+      if (found === 0) {
+        list.innerHTML = '<li class="text-gray-600">查無可調課教師</li>';
+      }
+      
+      document.getElementById('popup').classList.remove('hidden');
+      document.getElementById('popup').classList.add('flex');
+    }
+
+    function isFree(teacher, day, period) {
+      return (teacher_free[teacher] || []).some(([d, p]) => d === day && p === period);
+    }
+
+    function extractTeacher(text) {
+      const match = text.match(/<span[^>]*>([^<]+)<\/span>/);
+      return match ? match[1] : null;
+    }
+
+    function stripHTML(html) {
+      return html.replace(/<[^>]+>/g, '');
+    }
+
+    // 修正後的體育課連續天數檢查邏輯
+    function causesPEConsecutiveDays(className, d1, p1, d2, p2) {
+      // 只有相鄰天數才需要檢查
+      if (Math.abs(d1 - d2) !== 1) return false;
+      
+      const getSubject = (day, period) => {
+        const content = class_schedule[className]?.[day]?.[period] || '';
+        return stripHTML(content);
+      };
+      
+      const s1 = getSubject(d1, p1);
+      const s2 = getSubject(d2, p2);
+      
+      // 檢查是否都包含"體育"關鍵字
+      const isPE1 = s1.includes("體育");
+      const isPE2 = s2.includes("體育");
+      
+      return isPE1 && isPE2;
+    }
+
+    function causesOverloadInDay(teacher, className, day) {
+      const schedule = teacher_schedule[teacher]?.[day] || {};
+      let count = 0;
+      for (let p = 1; p <= 8; p++) {
+        if (schedule[p] === className) count++;
+      }
+      return count >= 3; // 同一天教同一班3節以上視為過多
+    }
+
+    function causesNoLunchBreak(teacher, className, day) {
+      const schedule = teacher_schedule[teacher]?.[day] || {};
+      // 第4節和第5節都要教同一班級會導致午休不足
+      return schedule[4] === className && schedule[5] === className;
+    }
+
+    function closePopup() {
+      document.getElementById('popup').classList.add('hidden');
+      document.getElementById('popup').classList.remove('flex');
+    }
+
+    window.onload = () => {
+      setMode('class');
+    };
+  </script>
+</body>
+</html>
