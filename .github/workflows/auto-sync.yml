@@ -1,0 +1,14 @@
+name: Daily Schedule Sync to Render
+
+on:
+  schedule:
+    - cron: "0 22 * * *"  # 台灣時間早上6點，UTC+0 = 22:00
+  workflow_dispatch:      # 可手動觸發
+
+jobs:
+  trigger-render-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: |
+          curl -X POST https://api.render.com/deploy/srv-d0oa9avdiees739s26ng?key=NjPuLtOKfyg
