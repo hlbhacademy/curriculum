@@ -6,3 +6,5 @@ gspread
 oauth2client
 authlib
 Flask-Caching
+google-api-python-client
+openpyxl
