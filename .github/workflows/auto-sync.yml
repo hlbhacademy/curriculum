@@ -1,14 +1,14 @@
-name: Daily Schedule Sync to Render
+@app.route("/sync", methods=["GET"])
+def manual_sync():
+    try:
+        from sync_drive_to_gsheet import upload_to_google_sheet, download_latest_schedule
 
-on:
-  schedule:
-    - cron: "0 22 * * *"  # 每天早上 6 點（台灣時間）
-  workflow_dispatch:
+        # 上傳最新 Excel 到 Google Sheets
+        upload_to_google_sheet(download_latest_schedule())
 
-jobs:
-  call-sync-endpoint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger /sync endpoint
-        run: |
-          curl -L https://my-schedule-ne7a.onrender.com/sync
+        # ✅ 清除舊快取，讓系統強制重新讀取
+        load_schedule.cache_clear()
+
+        return "✅ 課表同步成功", 200
+    except Exception as e:
+        return f"❌ 同步失敗：{str(e)}", 500
