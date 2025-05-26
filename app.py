@@ -48,7 +48,6 @@ def logout():
     return redirect("/")
 
 # ===== Google Sheets 課表快取讀取 =====
-@lru_cache(maxsize=1)
 def load_schedule():
     credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
