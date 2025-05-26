@@ -12,3 +12,7 @@ jobs:
       - name: Trigger Render Deploy Hook
         run: |
           curl -X POST https://api.render.com/deploy/srv-d0oa9avdiees739s26ng?key=NjPuLtOKfyg
+
+Commit changes
+[✔] Commit directly to the main branch
+Commit message: Add GitHub Actions for auto-sync
