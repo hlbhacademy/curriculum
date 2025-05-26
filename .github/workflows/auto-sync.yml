@@ -2,11 +2,12 @@ name: Daily Schedule Sync to Render
 
 on:
   schedule:
-    - cron: "0 22 * * *"     # 台灣時間每天早上 6 點
-  workflow_dispatch:          # 允許手動觸發測試
+    # 台灣時間 06:00；UTC+0 為 22:00
+    - cron: "0 22 * * *"
+  workflow_dispatch:
 
 jobs:
-  call-sync-endpoint:
+  call-sync:
     runs-on: ubuntu-latest
     steps:
       - name: Call /sync endpoint
