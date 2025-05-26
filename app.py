@@ -54,7 +54,7 @@ def load_schedule():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_info, scope)
     client = gspread.authorize(credentials)
-    sheet = client.open_by_key("17sI2YSDCec_Olm3CiqW57wSS63fJiGXN7x-9-jbcCJo").worksheet("工作表1")
+    sheet = client.open_by_key(os.environ["GOOGLE_SHEET_ID"]).worksheet(os.environ.get("GOOGLE_SHEET_TAB", "工作表1"))
     df = pd.DataFrame(sheet.get_all_records())
     df = df[df["班級名稱"].notna() & df["教師名稱"].notna() & df["星期"].notna() & df["節次"].notna()]
     return df
@@ -161,6 +161,16 @@ def swap_options():
                 "reason": "、".join(reasons)
             })
     return jsonify(options)
+
+# ===== ✅ 新增 /sync 路由 =====
+@app.route("/sync", methods=["GET"])
+def manual_sync():
+    try:
+        from sync_drive_to_gsheet import upload_to_google_sheet, download_latest_schedule
+        upload_to_google_sheet(download_latest_schedule())
+        return "✅ 課表同步成功", 200
+    except Exception as e:
+        return f"❌ 同步失敗：{str(e)}", 500
 
 if __name__ == "__main__":
     app.run(debug=True)
