@@ -34,7 +34,7 @@ sheets_creds = ServiceAccountCredentials.from_json_keyfile_dict(
 drive_service = build('drive', 'v3', credentials=drive_creds)
 gc = gspread.authorize(sheets_creds)
 
-# === 1. 自動複製最新的 schedule.xlsx 並下載 Service Account 擁有的版本 ===
+# === 1. 自動複製最新的 schedule.xlsx 並下載 Service Account 擁有的副本 ===
 def download_latest_schedule():
     results = drive_service.files().list(
         q=f"'{FOLDER_ID}' in parents and name='schedule.xlsx' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
@@ -44,14 +44,15 @@ def download_latest_schedule():
     ).execute()
     
     files = results.get("files", [])
-    
-    # 👇👇👇 新增 debug 輸出 👇👇👇
+
     print("🔍 Google Drive 回傳的檔案列表：", files)
 
     if not files:
         raise FileNotFoundError("❌ 找不到 schedule.xlsx")
 
-    # 複製檔案成 Service Account 擁有的副本
+    origin_file_id = files[0]["id"]  # ✅ 定義檔案 ID
+
+    # 複製為自己的副本
     copied_file_metadata = {
         "name": "schedule_copy.xlsx",
         "parents": [FOLDER_ID]
@@ -62,7 +63,7 @@ def download_latest_schedule():
     ).execute()
     copied_file_id = copied_file["id"]
 
-    # 下載 schedule_copy.xlsx
+    # 下載副本
     request = drive_service.files().get_media(fileId=copied_file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
@@ -72,7 +73,7 @@ def download_latest_schedule():
     fh.seek(0)
     return fh
 
-# === 2. 上傳至指定 Google Sheets 工作表 ===
+# === 2. 上傳至 Google Sheet ===
 def upload_to_google_sheet(file_stream):
     df = pd.read_excel(file_stream, sheet_name=0)
     sheet = gc.open_by_key(SHEET_ID).worksheet(SHEET_TAB)
