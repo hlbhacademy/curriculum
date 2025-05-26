@@ -42,25 +42,14 @@ def download_latest_schedule():
         orderBy="modifiedTime desc",
         pageSize=1
     ).execute()
+    
     files = results.get("files", [])
-    if not files:
-        # 🔍 額外顯示資料夾中實際存在的檔案名稱，方便除錯
-        all_files = drive_service.files().list(
-            q=f"'{FOLDER_ID}' in parents",
-            fields="files(name)"
-        ).execute()
-        file_list = [f["name"] for f in all_files.get("files", [])]
-        raise FileNotFoundError(f"❌ 找不到 schedule.xlsx，資料夾中目前檔案有：{file_list}")
+    
+    # 👇👇👇 新增 debug 輸出 👇👇👇
+    print("🔍 Google Drive 回傳的檔案列表：", files)
 
-    file_id = files[0]["id"]
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-    fh.seek(0)
-    return fh
+    if not files:
+        raise FileNotFoundError("❌ 找不到 schedule.xlsx")
 
     # 複製檔案成 Service Account 擁有的副本
     copied_file_metadata = {
