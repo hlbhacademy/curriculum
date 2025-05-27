@@ -68,13 +68,47 @@ def load_schedule():
     sheet = client.open_by_key(os.environ["GOOGLE_SHEET_ID"]).worksheet(worksheet_name)
 
     df = pd.DataFrame(sheet.get_all_records())
-    df = df[
-        df["班級名稱"].notna()
-        & df["教師名稱"].notna()
-        & df["星期"].notna()
-        & df["節次"].notna()
-    ]
-    return df
+    
+    # 數據清理和調試
+    print(f"原始數據共 {len(df)} 行")
+    
+    # 移除完全空白的行
+    df = df.dropna(how='all')
+    print(f"移除空行後剩餘 {len(df)} 行")
+    
+    # 基本數據清理
+    for col in ['班級名稱', '教師名稱', '科目名稱']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].replace('nan', '')
+    
+    # 只保留有效的課程記錄
+    valid_df = df[
+        (df["班級名稱"].notna()) & 
+        (df["班級名稱"] != "") &
+        (df["班級名稱"] != "nan") &
+        (df["教師名稱"].notna()) & 
+        (df["教師名稱"] != "") &
+        (df["教師名稱"] != "nan") &
+        (df["星期"].notna()) & 
+        (df["節次"].notna())
+    ].copy()
+    
+    print(f"過濾後有效數據 {len(valid_df)} 行")
+    
+    # 檢查重複記錄
+    duplicates = valid_df.groupby(['班級名稱', '教師名稱', '星期', '節次']).size()
+    duplicate_records = duplicates[duplicates > 1]
+    if not duplicate_records.empty:
+        print("發現重複記錄：")
+        for idx, count in duplicate_records.items():
+            print(f"  {idx}: {count} 筆")
+    
+    # 移除完全重複的記錄，保留第一筆
+    valid_df = valid_df.drop_duplicates(subset=['班級名稱', '教師名稱', '星期', '節次'], keep='first')
+    print(f"去重後最終數據 {len(valid_df)} 行")
+    
+    return valid_df
 
 
 # ===== 班級排序邏輯 =====
@@ -125,7 +159,7 @@ def index():
     )
 
 
-# ===== 課表查詢 API =====
+# ===== 課表查詢 API (修復版) =====
 @app.route("/schedule/<mode>/<target>")
 def schedule(mode, target):
     df = load_schedule()
@@ -134,18 +168,87 @@ def schedule(mode, target):
         return jsonify({"error": "無效的查詢模式"}), 400
 
     col = col_map[mode]
-    sub_df = df[df[col] == target]
+    sub_df = df[df[col] == target].copy()
+    
+    # 添加調試信息
+    print(f"查詢 {mode}: {target}")
+    print(f"找到 {len(sub_df)} 筆記錄")
+    print("記錄內容：")
+    for _, row in sub_df.iterrows():
+        print(f"  星期{row['星期']} 第{row['節次']}節: {row['科目名稱']} - {row['教師名稱']} - {row['班級名稱']}")
 
     data = {}
     for _, row in sub_df.iterrows():
-        key = f"{int(row['星期'])}-{int(row['節次'])}"
-        data[key] = {
-            "subject": row["科目名稱"],
-            "teacher": row["教師名稱"],
-            "room": row["教室名稱"],
-            "class": row["班級名稱"],
-        }
+        try:
+            # 確保星期和節次是有效數值
+            weekday = int(float(row['星期']))
+            period = int(float(row['節次']))
+            
+            # 驗證星期和節次範圍
+            if not (1 <= weekday <= 5 and 1 <= period <= 8):
+                print(f"警告：無效的時間 - 星期{weekday} 第{period}節，跳過此記錄")
+                continue
+                
+            key = f"{weekday}-{period}"
+            
+            # 檢查是否有重複的時段
+            if key in data:
+                print(f"警告：時段 {key} 有重複課程")
+                print(f"  現有: {data[key]}")
+                print(f"  新的: {row['科目名稱']} - {row['教師名稱']} - {row['班級名稱']}")
+                # 可以選擇跳過或覆蓋，這裡選擇跳過重複項
+                continue
+            
+            data[key] = {
+                "subject": str(row["科目名稱"]).strip(),
+                "teacher": str(row["教師名稱"]).strip(),
+                "room": str(row["教室名稱"]).strip() if pd.notna(row.get("教室名稱")) else "",
+                "class": str(row["班級名稱"]).strip(),
+            }
+        except (ValueError, TypeError) as e:
+            print(f"數據轉換錯誤：{e}")
+            print(f"問題記錄：星期={row['星期']}, 節次={row['節次']}")
+            continue
+    
+    print(f"最終返回 {len(data)} 個時段的課程")
     return jsonify(data)
+
+
+# ===== 調試路由，幫助排查問題 =====
+@app.route("/debug/<mode>/<target>")
+def debug_schedule(mode, target):
+    """調試用路由，顯示原始查詢結果"""
+    user = session.get("user")
+    if not user:
+        return "請先登入", 401
+        
+    df = load_schedule()
+    col_map = {"class": "班級名稱", "teacher": "教師名稱", "room": "教室名稱"}
+    if mode not in col_map:
+        return "無效查詢模式", 400
+
+    col = col_map[mode]
+    sub_df = df[df[col] == target]
+    
+    # 返回詳細的調試信息
+    debug_info = {
+        "total_records": len(df),
+        "matched_records": len(sub_df),
+        "query": f"{mode}: {target}",
+        "matches": []
+    }
+    
+    for _, row in sub_df.iterrows():
+        debug_info["matches"].append({
+            "星期": row.get("星期"),
+            "節次": row.get("節次"), 
+            "科目名稱": row.get("科目名稱"),
+            "教師名稱": row.get("教師名稱"),
+            "班級名稱": row.get("班級名稱"),
+            "教室名稱": row.get("教室名稱", "")
+        })
+    
+    return jsonify(debug_info)
 
 
 # ===== 可調課建議 API =====
@@ -176,7 +279,10 @@ def swap_options():
         if b_teacher == src["教師名稱"]:
             continue
         for _, b in b_rows.iterrows():
-            b_day, b_period = int(b["星期"]), int(b["節次"])
+            try:
+                b_day, b_period = int(float(b["星期"])), int(float(b["節次"]))
+            except (ValueError, TypeError):
+                continue
 
             # 只處理 1~7 與第8節的互換限制
             if (period == 8 and b_period <= 7) or (b_period == 8 and period <= 7):
