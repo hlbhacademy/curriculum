@@ -367,28 +367,6 @@ def swap_options():
             )
     return jsonify(options)
 
-
-# ===== /sync 路由：同步並清除快取 =====
-@app.route("/sync", methods=["GET"])
-def manual_sync():
-    """同步 Drive → Google Sheet，再清除快取以載入最新資料"""
-    try:
-        from sync_drive_to_gsheet import (
-            upload_to_google_sheet,
-            download_latest_schedule,
-        )
-
-        # 1. 把最新 Excel 推上 Google Sheet
-        upload_to_google_sheet(download_latest_schedule())
-
-        # 2. 清除 DataFrame 快取
-        load_schedule.cache_clear()
-
-        return "✅ 課表同步成功", 200
-    except Exception as e:
-        return f"❌ 同步失敗：{str(e)}", 500
-
-
 # ===== 主程式 =====
 if __name__ == "__main__":
     app.run(debug=True)
