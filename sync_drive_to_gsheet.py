@@ -77,9 +77,14 @@ def download_latest_schedule():
 def upload_to_google_sheet(file_stream):
     df = pd.read_excel(file_stream, sheet_name=0)
     sheet = gc.open_by_key(SHEET_ID).worksheet(SHEET_TAB)
+
+    # ✅ 徹底清除所有資料，包括多餘的列
+    sheet.resize(rows=1)  # 只留下標題列
     sheet.clear()
+
+    # ✅ 上傳最新資料
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
-    print("✅ 已從 Google Drive 同步 schedule.xlsx 至 Google Sheet。")
+    print(f"✅ 已從 Google Drive 同步 {len(df)} 筆資料至 Google Sheet。")
 
 # === 測試執行 ===
 if __name__ == "__main__":
