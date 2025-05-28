@@ -37,7 +37,7 @@ gc = gspread.authorize(sheets_creds)
 def download_latest_schedule():
     results = drive_service.files().list(
         q=f"'{FOLDER_ID}' in parents and name='schedule.xlsx' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
-        fields="files(id, name)",
+        fields="files(id, name, mimeType)",
         orderBy="modifiedTime desc",
         pageSize=1
     ).execute()
@@ -48,11 +48,42 @@ def download_latest_schedule():
     if not files:
         raise FileNotFoundError("❌ 找不到 schedule.xlsx")
 
-    file_id = files[0]["id"]
-    print("✅ 找到檔案 ID：", file_id)
+    source_file_id = files[0]["id"]
+    print("✅ 找到原始檔案 ID：", source_file_id)
 
-    # === 下載 Excel 原始檔為二進位 ===
-    request = drive_service.files().get_media(fileId=file_id)
+    # === 複製為自己的副本，指定 .xlsx MIME 類型避免轉為 Google Sheet ===
+    copied_file_metadata = {
+        "name": "schedule_copy.xlsx",
+        "parents": [FOLDER_ID],
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+    copied_file = drive_service.files().copy(
+        fileId=source_file_id,
+        body=copied_file_metadata
+    ).execute()
+
+    copied_file_id = copied_file["id"]
+    print("📄 複製副本 ID：", copied_file_id)
+
+    # === 下載為二進位 ===
+    request = drive_service.files().get_media(fileId=copied_file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
-    done =
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    return fh
+
+# === 4. 上傳至 Google Sheet ===
+def upload_to_google_sheet(file_stream):
+    df = pd.read_excel(file_stream, sheet_name=0)
+    sheet = gc.open_by_key(SHEET_ID).worksheet(SHEET_TAB)
+
+    # === 清除所有資料，避免殘影 ===
+    sheet.resize(rows=1)
+    sheet.clear()
+
+    # === 上傳新資料 ===
+    sheet.update([df.columns.values.tolist()] + df.values.tolist())
+    print(f"✅ 上傳完成，共 {len(df)} 筆資料")
