@@ -64,8 +64,10 @@ def download_latest_schedule():
     copied_file_id = copied_file["id"]
 
     # 下載副本
-    request = drive_service.files().get_media(fileId=copied_file_id)
-    fh = io.BytesIO()
+    request = drive_service.files().export_media(
+    fileId=copied_file_id,
+    mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+)    fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
     while not done:
