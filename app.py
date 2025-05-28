@@ -43,13 +43,19 @@ def callback():
     session["user"] = user_info
     return redirect("/")
 
+# ===== /sync 路由：同步並清除快取 =====
 @app.route("/sync", methods=["GET"])
-def sync():
+def manual_sync():
     try:
-        upload_to_google_sheet(download_latest_schedule())
-        return "✅ 同步成功", 200
+        from sync_drive_to_gsheet import upload_to_google_sheet, download_latest_schedule
+
+        file = download_latest_schedule()  # ✅ 下載真實 .xlsx
+        upload_to_google_sheet(file)      # ✅ 上傳轉入 Google Sheet
+        load_schedule.cache_clear()       # ✅ 清除快取
+        return "✅ 課表同步成功", 200
     except Exception as e:
-        return f"❌ 同步失敗：{str(e)}", 500
+        import traceback
+        return f"❌ 同步失敗：{str(e)}\n{traceback.format_exc()}", 500
 
 @app.route("/logout")
 def logout():
