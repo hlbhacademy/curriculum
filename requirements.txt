@@ -8,3 +8,4 @@ authlib
 Flask-Caching
 google-api-python-client
 openpyxl
+google-auth
