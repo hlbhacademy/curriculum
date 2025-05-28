@@ -43,6 +43,13 @@ def callback():
     session["user"] = user_info
     return redirect("/")
 
+@app.route("/sync", methods=["GET"])
+def sync():
+    try:
+        upload_to_google_sheet(download_latest_schedule())
+        return "✅ 同步成功", 200
+    except Exception as e:
+        return f"❌ 同步失敗：{str(e)}", 500
 
 @app.route("/logout")
 def logout():
