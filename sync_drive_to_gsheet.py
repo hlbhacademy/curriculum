@@ -58,7 +58,7 @@ def download_latest_schedule():
         "parents": [FOLDER_ID]
     }
     copied_file = drive_service.files().copy(
-        fileId=file_id,
+        fileId=origin_file_id,
         body=copied_file_metadata
     ).execute()
     copied_file_id = copied_file["id"]
