@@ -3,79 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>課表查詢系統</title>
+  <title>課表查詢</title>
   <style>
     body {
-      font-family: "Noto Sans TC", sans-serif;
-      margin: 0;
-      padding: 1em;
-      background-color: #f4f4f4;
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1em;
-    }
-    h1 {
-      margin: 0;
-    }
-    .menu {
-      display: flex;
-      gap: 1em;
-    }
-    select {
-      padding: 0.5em;
-      font-size: 1em;
+      font-family: sans-serif;
+      padding: 20px;
     }
     table {
-      width: 100%;
       border-collapse: collapse;
-      margin-top: 1em;
-      background: white;
+      width: 100%;
+      margin-top: 20px;
     }
     th, td {
       border: 1px solid #ccc;
+      padding: 8px;
       text-align: center;
-      padding: 0.6em;
+      vertical-align: top;
     }
-    td:hover {
-      background-color: #e6f0ff;
-      cursor: pointer;
+    th {
+      background-color: #f5f5f5;
     }
-    .suggest {
-      border: 2px solid #337ab7;
-      background-color: rgba(51, 122, 183, 0.2);
+    strong {
+      font-weight: bold;
     }
-    .warning {
-      border: 2px dashed orange;
-      background-color: rgba(255, 165, 0, 0.2);
-    }
-    footer {
-      margin-top: 2em;
-      font-size: 0.9em;
-      color: #666;
-      text-align: center;
-    }
-    @media (max-width: 768px) {
-      table {
-        font-size: 0.85em;
-      }
-      .menu {
-        flex-direction: column;
-      }
+    .gray {
+      font-size: 0.8em;
+      color: gray;
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>課表查詢</h1>
-    <div class="menu">
-      <span>{{ email }}</span>
-      <a href="/logout">登出</a>
-    </div>
-  </header>
-
+  <h2>課表查詢</h2>
   <label for="mode">查詢方式：</label>
   <select id="mode">
     <option value="class">班級</option>
@@ -84,110 +42,107 @@
   </select>
 
   <label for="target">選擇對象：</label>
-  <select id="target">
-    {% for name in class_names %}
-      <option value="{{ name }}">{{ name }}</option>
-    {% endfor %}
-  </select>
+  <select id="target"></select>
 
-  <table id="schedule">
+  <table id="schedule-table">
     <thead>
       <tr>
         <th>節次／星期</th>
-        {% for i in range(1, 6) %}
-          <th>週{{ i }}<br>{{ weekday_dates[i] if weekday_dates and i in weekday_dates else "" }}</th>
-        {% endfor %}
+        <th>週1<br><span id="date-1"></span></th>
+        <th>週2<br><span id="date-2"></span></th>
+        <th>週3<br><span id="date-3"></span></th>
+        <th>週4<br><span id="date-4"></span></th>
+        <th>週5<br><span id="date-5"></span></th>
       </tr>
     </thead>
     <tbody>
-      {% for p in range(1, 9) %}
-        <tr>
-          <th>第{{ p }}節</th>
-          {% for d in range(1, 6) %}
-            <td data-day="{{ d }}" data-period="{{ p }}"></td>
-          {% endfor %}
-        </tr>
-      {% endfor %}
+      <!-- 8 節課 -->
+      <!-- 每列代表第 n 節 -->
+      <!-- 每格 id 為 cell-星期-節次 -->
+      <!-- 範例: cell-1-1 表週一第1節 -->
+      <script>
+        for (let period = 1; period <= 8; period++) {
+          document.write('<tr>');
+          document.write(`<th>第${period}節</th>`);
+          for (let weekday = 1; weekday <= 5; weekday++) {
+            document.write(`<td id="cell-${weekday}-${period}"></td>`);
+          }
+          document.write('</tr>');
+        }
+      </script>
     </tbody>
   </table>
 
-  <footer>
-    本課表為 {{ yesterday }}1600 版本，最新課表依教學組公告為準。
-  </footer>
+  <p style="text-align:right; font-size:0.9em; color:gray">
+    本課表為 <span id="version-date"></span> 1600 版本，最新課表依教學組公告為準。
+  </p>
 
   <script>
-    const modeEl = document.getElementById("mode");
-    const targetEl = document.getElementById("target");
-    const scheduleEl = document.getElementById("schedule");
+    async function fetchOptions() {
+      const mode = document.getElementById("mode").value;
+      const response = await fetch("/schedule/" + mode + "/__options__");
+      const options = await response.json();
 
-    const allData = {
-      class: {{ class_names|tojson }},
-      teacher: {{ teacher_names|tojson }},
-      room: {{ room_names|tojson }},
-    };
+      const select = document.getElementById("target");
+      select.innerHTML = "";
+      options.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt;
+        option.textContent = opt;
+        select.appendChild(option);
+      });
+    }
 
-    function updateTargetOptions() {
-      const mode = modeEl.value;
-      const options = allData[mode];
-      targetEl.innerHTML = options.map(n => `<option value="${n}">${n}</option>`).join("");
+    function updateScheduleTable(data) {
+      for (let period = 1; period <= 8; period++) {
+        for (let weekday = 1; weekday <= 5; weekday++) {
+          const key = `${weekday}-${period}`;
+          const cell = document.getElementById(`cell-${weekday}-${period}`);
+
+          if (!cell) continue;
+
+          if (Array.isArray(data[key])) {
+            cell.innerHTML = data[key]
+              .map(item => `
+                <div>
+                  <strong>${item.subject}</strong><br>
+                  <span class="gray">${item.teacher}</span>
+                </div>`)
+              .join("");
+          } else if (data[key]) {
+            const item = data[key];
+            cell.innerHTML = `<strong>${item.subject}</strong><br><span class="gray">${item.teacher}</span>`;
+          } else {
+            cell.innerHTML = "";
+          }
+        }
+      }
+    }
+
+    async function fetchSchedule() {
+      const mode = document.getElementById("mode").value;
+      const target = document.getElementById("target").value;
+      const response = await fetch(`/schedule/${mode}/${encodeURIComponent(target)}`);
+      const data = await response.json();
+      updateScheduleTable(data);
+    }
+
+    document.getElementById("mode").addEventListener("change", async () => {
+      await fetchOptions();
       fetchSchedule();
-    }
-
-    modeEl.addEventListener("change", updateTargetOptions);
-    targetEl.addEventListener("change", fetchSchedule);
-
-    function fetchSchedule() {
-      const mode = modeEl.value;
-      const target = targetEl.value;
-      fetch(`/schedule/${mode}/${target}`)
-        .then(res => res.json())
-        .then(data => {
-          for (const td of scheduleEl.querySelectorAll("td")) {
-            td.className = "";
-            td.textContent = "";
-            td.title = "";
-          }
-          for (const key in data) {
-            const td = scheduleEl.querySelector(`td[data-day="${key.split("-")[0]}"][data-period="${key.split("-")[1]}"]`);
-            if (td) td.textContent = `${data[key].subject}\n${data[key].teacher}`;
-          }
-        });
-    }
-
-    scheduleEl.addEventListener("click", (e) => {
-      if (e.target.tagName !== "TD") return;
-      const day = e.target.dataset.day;
-      const period = e.target.dataset.period;
-      const mode = modeEl.value;
-      const target = targetEl.value;
-      if (mode !== "class") return;
-
-      fetch("/swap-options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekday: day, period: period, target: target })
-      })
-        .then(res => res.json())
-        .then(data => {
-          for (const td of scheduleEl.querySelectorAll("td")) {
-            td.className = "";
-            td.title = "";
-          }
-          for (const opt of data) {
-            const td = scheduleEl.querySelector(`td[data-day="${opt.day}"][data-period="${opt.period}"]`);
-            if (td) {
-              if (opt.recommended) {
-                td.classList.add("suggest");
-              } else {
-                td.classList.add("warning");
-                td.title = `【不建議】${opt.reason}`;
-              }
-            }
-          }
-        });
     });
 
-    updateTargetOptions();
+    document.getElementById("target").addEventListener("change", fetchSchedule);
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      await fetchOptions();
+      fetchSchedule();
+
+      const today = new Date();
+      const versionDate = new Date(today.getTime() - 86400000);
+      const versionText = `${versionDate.getMonth() + 1}月${versionDate.getDate()}日`;
+      document.getElementById("version-date").textContent = versionText;
+    });
   </script>
 </body>
 </html>
