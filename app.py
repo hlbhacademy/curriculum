@@ -47,15 +47,21 @@ def callback():
 @app.route("/sync", methods=["GET"])
 def manual_sync():
     try:
-        from sync_drive_to_gsheet import upload_to_google_sheet, download_latest_schedule
+        from sync_drive_to_gsheet import (
+            upload_to_google_sheet,
+            download_latest_schedule,
+        )
 
-        file = download_latest_schedule()  # ✅ 下載真實 .xlsx
-        upload_to_google_sheet(file)      # ✅ 上傳轉入 Google Sheet
-        load_schedule.cache_clear()       # ✅ 清除快取
+        # 1. 把最新 Excel 推上 Google Sheet
+        upload_to_google_sheet(download_latest_schedule())
+
+        # 2. 清除 DataFrame 快取
+        load_schedule.cache_clear()
+
         return "✅ 課表同步成功", 200
     except Exception as e:
-        import traceback
-        return f"❌ 同步失敗：{str(e)}\n{traceback.format_exc()}", 500
+        return f"❌ 同步失敗：{str(e)}", 500
+
 
 @app.route("/logout")
 def logout():
