@@ -367,6 +367,162 @@ def swap_options():
             )
     return jsonify(options)
 
+# 在 app.py 中添加這些調試路由
+
+@app.route("/debug/raw-data")
+def debug_raw_data():
+    """查看 Google Sheets 原始數據"""
+    user = session.get("user")
+    if not user:
+        return "請先登入", 401
+    
+    # 直接讀取 Google Sheets 原始數據（不使用快取）
+    credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        credentials_info, scope
+    )
+    client = gspread.authorize(credentials)
+
+    worksheet_name = os.environ.get("GOOGLE_SHEET_TAB", "工作表1")
+    sheet = client.open_by_key(os.environ["GOOGLE_SHEET_ID"]).worksheet(worksheet_name)
+
+    # 獲取所有原始數據
+    all_records = sheet.get_all_records()
+    
+    return jsonify({
+        "total_records": len(all_records),
+        "first_10_records": all_records[:10],
+        "columns": list(all_records[0].keys()) if all_records else []
+    })
+
+@app.route("/debug/teacher/<teacher_name>")
+def debug_teacher_data(teacher_name):
+    """查看特定教師的所有課程數據"""
+    user = session.get("user")
+    if not user:
+        return "請先登入", 401
+    
+    # 讀取原始數據
+    credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        credentials_info, scope
+    )
+    client = gspread.authorize(credentials)
+
+    worksheet_name = os.environ.get("GOOGLE_SHEET_TAB", "工作表1")
+    sheet = client.open_by_key(os.environ["GOOGLE_SHEET_ID"]).worksheet(worksheet_name)
+
+    df = pd.DataFrame(sheet.get_all_records())
+    
+    # 查找該教師的所有記錄
+    teacher_records = df[df["教師名稱"].astype(str).str.contains(teacher_name, na=False)]
+    
+    # 轉換為 JSON 可序列化的格式
+    records_list = []
+    for _, row in teacher_records.iterrows():
+        record = {}
+        for col in df.columns:
+            record[col] = str(row[col]) if pd.notna(row[col]) else ""
+        records_list.append(record)
+    
+    return jsonify({
+        "teacher": teacher_name,
+        "total_records": len(records_list),
+        "records": records_list
+    })
+
+@app.route("/debug/filter-process")
+def debug_filter_process():
+    """查看數據過濾過程的詳細信息"""
+    user = session.get("user")
+    if not user:
+        return "請先登入", 401
+    
+    # 讀取原始數據
+    credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        credentials_info, scope
+    )
+    client = gspread.authorize(credentials)
+
+    worksheet_name = os.environ.get("GOOGLE_SHEET_TAB", "工作表1")
+    sheet = client.open_by_key(os.environ["GOOGLE_SHEET_ID"]).worksheet(worksheet_name)
+
+    df = pd.DataFrame(sheet.get_all_records())
+    
+    # 步驟 1：原始數據
+    step1 = {
+        "description": "原始數據",
+        "count": len(df),
+        "sample": df.head(3).to_dict('records') if len(df) > 0 else []
+    }
+    
+    # 步驟 2：移除完全空白的行
+    df_step2 = df.dropna(how='all')
+    step2 = {
+        "description": "移除空行後",
+        "count": len(df_step2)
+    }
+    
+    # 步驟 3：基本數據清理
+    df_step3 = df_step2.copy()
+    for col in ['班級名稱', '教師名稱', '科目名稱']:
+        if col in df_step3.columns:
+            df_step3[col] = df_step3[col].astype(str).str.strip()
+            df_step3[col] = df_step3[col].replace('nan', '')
+    
+    step3 = {
+        "description": "基本數據清理後",
+        "count": len(df_step3)
+    }
+    
+    # 步驟 4：過濾有效記錄
+    valid_df = df_step3[
+        (df_step3["班級名稱"].notna()) & 
+        (df_step3["班級名稱"] != "") &
+        (df_step3["班級名稱"] != "nan") &
+        (df_step3["教師名稱"].notna()) & 
+        (df_step3["教師名稱"] != "") &
+        (df_step3["教師名稱"] != "nan") &
+        (df_step3["星期"].notna()) & 
+        (df_step3["節次"].notna())
+    ].copy()
+    
+    step4 = {
+        "description": "過濾有效記錄後",
+        "count": len(valid_df)
+    }
+    
+    # 步驟 5：檢查特定教師（陳月梅）
+    chen_records = valid_df[valid_df["教師名稱"].str.contains("陳月梅", na=False)]
+    chen_monday_7 = chen_records[
+        (chen_records["星期"].astype(str) == "1") & 
+        (chen_records["節次"].astype(str) == "7")
+    ]
+    
+    step5 = {
+        "description": "陳月梅老師週一第7節課程",
+        "count": len(chen_monday_7),
+        "records": chen_monday_7.to_dict('records') if len(chen_monday_7) > 0 else []
+    }
+    
+    return jsonify({
+        "filter_steps": [step1, step2, step3, step4, step5],
+        "chen_all_records": chen_records.to_dict('records')
+    })
+
 # ===== 主程式 =====
 if __name__ == "__main__":
     app.run(debug=True)
