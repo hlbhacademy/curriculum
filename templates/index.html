@@ -19,9 +19,11 @@
       padding: 8px;
       text-align: center;
       vertical-align: top;
+      cursor: pointer;
     }
     th {
       background-color: #f5f5f5;
+      cursor: default;
     }
     strong {
       font-weight: bold;
@@ -29,6 +31,10 @@
     .gray {
       font-size: 0.8em;
       color: gray;
+    }
+    .selected-cell {
+      background-color: #e0e0e0 !important;
+      outline: 2px solid #444;
     }
   </style>
 </head>
@@ -56,10 +62,6 @@
       </tr>
     </thead>
     <tbody>
-      <!-- 8 節課 -->
-      <!-- 每列代表第 n 節 -->
-      <!-- 每格 id 為 cell-星期-節次 -->
-      <!-- 範例: cell-1-1 表週一第1節 -->
       <script>
         for (let period = 1; period <= 8; period++) {
           document.write('<tr>');
@@ -77,7 +79,16 @@
     本課表為 <span id="version-date"></span> 1600 版本，最新課表依教學組公告為準。
   </p>
 
+  <!-- 彈窗顯示調課建議 -->
+  <div id="swap-popup" style="display:none; position:fixed; left:50%; top:15%; transform:translateX(-50%); background:#fff; border:1px solid #999; box-shadow:0 2px 10px #ccc; padding:20px; z-index:9999; min-width:300px;">
+    <div id="swap-popup-content"></div>
+    <button onclick="document.getElementById('swap-popup').style.display='none'">關閉</button>
+  </div>
+
   <script>
+    let lastSelectedCell = null;
+    let lastSelectedInfo = null;
+
     async function fetchOptions() {
       const mode = document.getElementById("mode").value;
       const response = await fetch("/schedule/" + mode + "/__options__");
@@ -98,6 +109,8 @@
         for (let weekday = 1; weekday <= 5; weekday++) {
           const key = `${weekday}-${period}`;
           const cell = document.getElementById(`cell-${weekday}-${period}`);
+          cell.classList.remove("selected-cell");
+          cell.onclick = null;
 
           if (!cell) continue;
 
@@ -109,9 +122,21 @@
                   <span class="gray">${item.teacher}</span>
                 </div>`)
               .join("");
+
+            // 只允許班級查詢時可點選
+            if (document.getElementById("mode").value === "class") {
+              cell.onclick = function() {
+                selectCell(cell, weekday, period);
+              };
+            }
           } else if (data[key]) {
             const item = data[key];
             cell.innerHTML = `<strong>${item.subject}</strong><br><span class="gray">${item.teacher}</span>`;
+            if (document.getElementById("mode").value === "class") {
+              cell.onclick = function() {
+                selectCell(cell, weekday, period);
+              };
+            }
           } else {
             cell.innerHTML = "";
           }
@@ -119,12 +144,53 @@
       }
     }
 
+    function selectCell(cell, weekday, period) {
+      if (lastSelectedCell) lastSelectedCell.classList.remove("selected-cell");
+      cell.classList.add("selected-cell");
+      lastSelectedCell = cell;
+      // 呼叫調課API
+      fetchSwapOptions(weekday, period);
+    }
+
     async function fetchSchedule() {
       const mode = document.getElementById("mode").value;
       const target = document.getElementById("target").value;
+      if (!target) return;
       const response = await fetch(`/schedule/${mode}/${encodeURIComponent(target)}`);
       const data = await response.json();
       updateScheduleTable(data);
+    }
+
+    async function fetchSwapOptions(weekday, period) {
+      const mode = document.getElementById("mode").value;
+      if (mode !== "class") return;
+      const target = document.getElementById("target").value;
+      // 呼叫API
+      const res = await fetch('/swap-options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, weekday, period })
+      });
+      const data = await res.json();
+      showSwapPopup(data, weekday, period);
+    }
+
+    function showSwapPopup(options, weekday, period) {
+      const popup = document.getElementById("swap-popup");
+      const content = document.getElementById("swap-popup-content");
+
+      if (!options || options.length === 0) {
+        content.innerHTML = `<b>此節無可調課建議。</b>`;
+      } else {
+        content.innerHTML = `<b>可調課建議：</b><br>` + options.map(opt => {
+          return `<div style="margin-bottom:6px;">
+            <b>${opt.swap_teacher}（${opt.swap_subject}）</b>
+            → ${opt.day}週${opt.period}節
+            ${opt.recommended ? '<span style="color:blue;">【建議】</span>' : `<span style="color:orange;">【不建議】${opt.reason}</span>`}
+          </div>`;
+        }).join("");
+      }
+      popup.style.display = 'block';
     }
 
     document.getElementById("mode").addEventListener("change", async () => {
@@ -132,17 +198,4 @@
       fetchSchedule();
     });
 
-    document.getElementById("target").addEventListener("change", fetchSchedule);
-
-    document.addEventListener("DOMContentLoaded", async () => {
-      await fetchOptions();
-      fetchSchedule();
-
-      const today = new Date();
-      const versionDate = new Date(today.getTime() - 86400000);
-      const versionText = `${versionDate.getMonth() + 1}月${versionDate.getDate()}日`;
-      document.getElementById("version-date").textContent = versionText;
-    });
-  </script>
-</body>
-</html>
+    document.getElementById
