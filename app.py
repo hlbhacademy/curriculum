@@ -29,6 +29,16 @@ def login():
         redirect_uri=url_for("callback", _external=True), nonce=nonce
     )
 
+@app.route("/schedule/<mode>/__options__")
+def schedule_options(mode):
+    df = load_schedule()
+    col_map = {"class": "班級名稱", "teacher": "教師名稱", "room": "教室名稱"}
+    if mode not in col_map:
+        return jsonify([])
+    options = sorted(df[col_map[mode]].dropna().unique().tolist())
+    return jsonify(options)
+
+
 @app.route("/callback")
 def callback():
     token = google.authorize_access_token()
